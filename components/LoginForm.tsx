@@ -116,7 +116,7 @@ export default function LoginForm({ onSuccess, onLoadingChange }: LoginFormProps
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="student@university.edu"
+                  placeholder="student@g.bracu.ac.bd"
                   className={inputClass}
                 />
               </div>
@@ -137,7 +137,7 @@ export default function LoginForm({ onSuccess, onLoadingChange }: LoginFormProps
                   required
                   value={studentId}
                   onChange={(e) => setStudentId(e.target.value)}
-                  placeholder="e.g. 221-15-1234"
+                  placeholder="e.g. 10000XXXXX or 12345678"
                   className={inputClass}
                 />
               </div>
@@ -158,7 +158,7 @@ export default function LoginForm({ onSuccess, onLoadingChange }: LoginFormProps
                   required
                   value={passcode}
                   onChange={(e) => setPasscode(e.target.value)}
-                  placeholder="Enter your passcode"
+                  placeholder="Enter your 6 digit passcode"
                   className={inputClass}
                 />
               </div>
