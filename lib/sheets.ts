@@ -6,107 +6,141 @@ export interface MarkEntry {
   value: string;
 }
 
+export interface CourseInfo {
+  courseCode: string;
+  courseTitle: string;
+  facultyName: string;
+  facultyInitials: string;
+  semester: string;
+  section: string;
+}
+
 export interface StudentResult {
   studentName: string;
   tabName: string;
   marks: MarkEntry[];
+  courseInfo: CourseInfo;
 }
 
-export async function findStudentMarks(
-  email: string,
-  studentId: string,
-  passcode: string
-): Promise<StudentResult | null> {
-  const privateKey = (process.env.GOOGLE_PRIVATE_KEY ?? "").replace(
-    /\\n/g,
-    "\n"
-  );
-  const serviceAccountEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL ?? "";
-  const sheetId = process.env.GOOGLE_SHEET_ID ?? "";
+export interface MasterLookupResult {
+  sheetId: string;
+  courseInfo: CourseInfo;
+}
 
-  const auth = new JWT({
-    email: serviceAccountEmail,
+function createAuth(): JWT {
+  const privateKey = (process.env.GOOGLE_PRIVATE_KEY ?? "").replace(/\\n/g, "\n");
+  return new JWT({
+    email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL ?? "",
     key: privateKey,
     scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"],
   });
+}
 
-  const doc = new GoogleSpreadsheet(sheetId, auth);
+const SERIAL_RE =
+  /^(sl\.?|serial(\s+(no\.?|number))?|s\.?\s*no\.?|sno\.?|sr\.?\s*no\.?|#|s\/n|sequence|index|row(\s+no\.?)?)$/i;
+
+/**
+ * Step A: Look up the master index sheet by composite course key.
+ * Returns the target sheet ID + course metadata, or null if not found.
+ */
+export async function getTargetSheet(courseId: string): Promise<MasterLookupResult | null> {
+  const masterSheetId = process.env.MASTER_INDEX_SHEET_ID ?? "";
+  const doc = new GoogleSpreadsheet(masterSheetId, createAuth());
   await doc.loadInfo();
 
-  console.log(
-    `[Sheets] Connected to: "${doc.title}" — ${doc.sheetCount} tab(s) found`
-  );
+  const sheet = doc.sheetsByIndex[0];
+  const rows = await sheet.getRows();
+  const headers = sheet.headerValues;
+
+  const codeCol    = headers.find((h) => h.toLowerCase().includes("course code"));
+  const titleCol   = headers.find((h) => h.toLowerCase().includes("course title"));
+  const nameCol    = headers.find((h) => h.toLowerCase() === "name" || (h.toLowerCase().includes("name") && !h.toLowerCase().includes("course")));
+  const initCol    = headers.find((h) => h.toLowerCase().includes("initial"));
+  const sectionCol = headers.find((h) => h.toLowerCase().includes("section"));
+  const semCol     = headers.find((h) => h.toLowerCase().includes("semester"));
+  const sheetCol   = headers.find((h) => h.toLowerCase().includes("sheet id"))
+    ?? headers.find((h) => h.toLowerCase().includes("sheet"));
+
+  if (!sheetCol) {
+    console.error("[Sheets] Master index missing Sheet ID column");
+    return null;
+  }
+
+  for (const row of rows) {
+    const code    = (codeCol    ? row.get(codeCol)    ?? "" : "").toString().trim();
+    const init    = (initCol    ? row.get(initCol)    ?? "" : "").toString().trim();
+    const section = (sectionCol ? row.get(sectionCol) ?? "" : "").toString().trim();
+    const sem     = (semCol     ? row.get(semCol)     ?? "" : "").toString().trim().replace(/-/g, "");
+
+    const compositeKey = [code, init, section, sem].filter(Boolean).join("-");
+
+    if (compositeKey.toLowerCase() === courseId.trim().toLowerCase()) {
+      const sheetId = (row.get(sheetCol) ?? "").toString().trim();
+      if (!sheetId) return null;
+
+      return {
+        sheetId,
+        courseInfo: {
+          courseCode:      code,
+          courseTitle:     (titleCol   ? row.get(titleCol)   ?? "" : "").toString().trim(),
+          facultyName:     (nameCol    ? row.get(nameCol)    ?? "" : "").toString().trim(),
+          facultyInitials: init,
+          semester:        (semCol     ? row.get(semCol)     ?? "" : "").toString().trim(),
+          section:         section,
+        },
+      };
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Steps B + C: Search the target sheet for a row matching both email AND student ID.
+ * Iterates through all tabs and returns on first match for speed.
+ */
+export async function findStudentInSheet(
+  sheetId: string,
+  email: string,
+  studentId: string,
+  courseInfo: CourseInfo
+): Promise<StudentResult | null> {
+  const doc = new GoogleSpreadsheet(sheetId, createAuth());
+  await doc.loadInfo();
 
   for (let i = 0; i < doc.sheetCount; i++) {
     const sheet = doc.sheetsByIndex[i];
     const tabName = sheet.title;
 
-    console.log(`[Sheets] Searching tab ${i + 1}/${doc.sheetCount}: "${tabName}"`);
-
     const rows = await sheet.getRows();
-
-    if (rows.length === 0) {
-      console.log(`[Sheets] Tab "${tabName}" is empty, skipping.`);
-      continue;
-    }
+    if (rows.length === 0) continue;
 
     const headers = sheet.headerValues;
-    console.log(`[Sheets] Headers in "${tabName}":`, headers);
 
-    // Locate the relevant column names (case-insensitive)
-    const emailCol = headers.find((h) =>
-      h.toLowerCase().includes("email")
-    );
-    const idCol = headers.find(
-      (h) =>
-        h.toLowerCase().includes("student id") ||
-        h.toLowerCase().includes("studentid") ||
-        h.toLowerCase().includes("id")
-    );
-    const passcodeCol = headers.find(
-      (h) =>
-        h.toLowerCase().includes("passcode") ||
-        h.toLowerCase().includes("password")
-    );
+    const emailCol = headers.find((h) => h.toLowerCase().includes("email"));
+    const idCol =
+      headers.find((h) => h.toLowerCase().includes("student id")) ??
+      headers.find((h) => h.toLowerCase().includes("studentid")) ??
+      headers.find((h) => h.toLowerCase() === "id");
 
-    if (!emailCol || !idCol || !passcodeCol) {
-      console.log(
-        `[Sheets] Tab "${tabName}" missing required columns (email/id/passcode), skipping.`
-      );
-      continue;
-    }
+    if (!emailCol || !idCol) continue;
 
     for (const row of rows) {
       const rowEmail = (row.get(emailCol) ?? "").toString().trim().toLowerCase();
-      const rowId = (row.get(idCol) ?? "").toString().trim();
-      const rowPasscode = (row.get(passcodeCol) ?? "").toString().trim();
+      const rowId    = (row.get(idCol)    ?? "").toString().trim();
 
-      const emailMatch = rowEmail === email.trim().toLowerCase();
-      const idMatch = rowId === studentId.trim();
-      const passcodeMatch = rowPasscode === passcode.trim();
+      if (rowEmail === email.trim().toLowerCase() && rowId === studentId.trim()) {
 
-      if (emailMatch && idMatch && passcodeMatch) {
-        console.log(
-          `[Sheets] MATCH FOUND in tab "${tabName}" for student ID: ${studentId}`
-        );
-
-        // Find student name column
         const nameCol = headers.find(
-          (h) =>
-            h.toLowerCase().includes("name") &&
-            !h.toLowerCase().includes("tab")
+          (h) => h.toLowerCase().includes("name") && !h.toLowerCase().includes("tab")
         );
         const studentName = nameCol
-          ? (row.get(nameCol) ?? "Student").toString().trim()
+          ? (row.get(nameCol) ?? studentId).toString().trim()
           : studentId;
 
-        // Map all headers to values, skipping credential + serial columns
         const credentialCols = new Set(
-          [emailCol, idCol, passcodeCol, nameCol].filter(Boolean) as string[]
+          [emailCol, idCol, nameCol].filter(Boolean) as string[]
         );
-
-        const SERIAL_RE =
-          /^(sl\.?|serial(\s+(no\.?|number))?|s\.?\s*no\.?|sno\.?|sr\.?\s*no\.?|#|s\/n|sequence|index|row(\s+no\.?)?)$/i;
 
         const marks: MarkEntry[] = headers
           .filter((h) => !credentialCols.has(h) && !SERIAL_RE.test(h.trim()))
@@ -116,13 +150,10 @@ export async function findStudentMarks(
           }))
           .filter((entry) => entry.value !== "");
 
-        return { studentName, tabName, marks };
+        return { studentName, tabName, marks, courseInfo };
       }
     }
-
-    console.log(`[Sheets] No match in tab "${tabName}".`);
   }
 
-  console.log(`[Sheets] No student found across all tabs.`);
   return null;
 }

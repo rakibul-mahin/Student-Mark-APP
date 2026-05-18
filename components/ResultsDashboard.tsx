@@ -1,7 +1,7 @@
 "use client";
 
 import { m, type Variants } from "framer-motion";
-import { BookOpen, LogOut, Award, FileText, Sun, Moon } from "lucide-react";
+import { BookOpen, LogOut, Award, FileText, Sun, Moon, UserRound, CalendarDays, Users } from "lucide-react";
 import clsx from "clsx";
 import { useTheme } from "./ThemeProvider";
 
@@ -10,10 +10,20 @@ interface MarkEntry {
   value: string;
 }
 
+interface CourseInfo {
+  courseCode: string;
+  courseTitle: string;
+  facultyName: string;
+  facultyInitials: string;
+  semester: string;
+  section: string;
+}
+
 interface StudentResult {
   studentName: string;
   tabName: string;
   marks: MarkEntry[];
+  courseInfo: CourseInfo;
 }
 
 interface ResultsDashboardProps {
@@ -39,7 +49,7 @@ const cardVariants: Variants = {
 };
 
 export default function ResultsDashboard({ result, onSignOut }: ResultsDashboardProps) {
-  const { studentName, tabName, marks } = result;
+  const { studentName, tabName, marks, courseInfo } = result;
   const { theme, toggleTheme } = useTheme();
 
   const totalCards = marks.filter((m) => cardType(m.label) === "total").length;
@@ -74,11 +84,7 @@ export default function ResultsDashboard({ result, onSignOut }: ResultsDashboard
               aria-label="Toggle theme"
               className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-white transition"
             >
-              {theme === "dark" ? (
-                <Sun className="w-4 h-4" />
-              ) : (
-                <Moon className="w-4 h-4" />
-              )}
+              {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
             </button>
             <button
               onClick={onSignOut}
@@ -97,7 +103,7 @@ export default function ResultsDashboard({ result, onSignOut }: ResultsDashboard
           initial={{ opacity: 0, y: -14 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4, delay: 0.05 }}
-          className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm p-6 mb-6"
+          className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm p-6 mb-4"
         >
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
@@ -128,6 +134,54 @@ export default function ResultsDashboard({ result, onSignOut }: ResultsDashboard
                   {gradeCards} grade
                 </span>
               )}
+            </div>
+          </div>
+        </m.div>
+
+        {/* Course info card */}
+        <m.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.12 }}
+          className="bg-blue-700 dark:bg-slate-800 rounded-2xl border border-blue-600 dark:border-slate-700 shadow-sm px-6 py-4 mb-6"
+        >
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            {/* Course code + title */}
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-lg font-bold text-white tracking-tight">
+                  {courseInfo.courseCode}
+                </span>
+                <span className="text-blue-200 dark:text-slate-400 text-sm">|</span>
+                <span className="text-blue-100 dark:text-slate-200 font-medium text-sm">
+                  {courseInfo.courseTitle}
+                </span>
+              </div>
+
+              {/* Faculty */}
+              <div className="flex items-center gap-1.5 mt-1.5">
+                <UserRound className="w-3.5 h-3.5 text-blue-300 dark:text-slate-400 shrink-0" />
+                <span className="text-blue-100 dark:text-slate-300 text-sm">
+                  {courseInfo.facultyName}
+                  {courseInfo.facultyInitials && (
+                    <span className="text-blue-300 dark:text-slate-500 ml-1">
+                      [{courseInfo.facultyInitials}]
+                    </span>
+                  )}
+                </span>
+              </div>
+            </div>
+
+            {/* Semester + Section chips */}
+            <div className="flex items-center gap-2 shrink-0 flex-wrap">
+              <span className="inline-flex items-center gap-1.5 bg-white/15 dark:bg-slate-700 text-white dark:text-slate-200 text-xs font-semibold px-3 py-1.5 rounded-full">
+                <CalendarDays className="w-3.5 h-3.5" />
+                {courseInfo.semester}
+              </span>
+              <span className="inline-flex items-center gap-1.5 bg-white/15 dark:bg-slate-700 text-white dark:text-slate-200 text-xs font-semibold px-3 py-1.5 rounded-full">
+                <Users className="w-3.5 h-3.5" />
+                Section {courseInfo.section}
+              </span>
             </div>
           </div>
         </m.div>
@@ -167,7 +221,6 @@ export default function ResultsDashboard({ result, onSignOut }: ResultsDashboard
                 />
 
                 <div className="p-4 pt-5">
-                  {/* Badge */}
                   {type && (
                     <span
                       className={clsx(
